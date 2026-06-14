@@ -935,7 +935,7 @@ function fbStartPolling(){
         if(h !== fbLastHash){
           fbLastHash = h;
           isRemoteUpdate = true;
-          months = data;
+          months = autoSortAllMonths(data);
           try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(months)); }catch{}
           renderLedger();
           showSaveStatus('🔄 Live sync!', 'var(--blue)');
@@ -994,7 +994,7 @@ async function connectFirebase(){
     } else if(Array.isArray(data) && data.length > 0){
       fbLastHash = JSON.stringify(data);
       isRemoteUpdate = true;
-      months = data;
+      months = autoSortAllMonths(data);
       try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(months)); }catch{}
       renderLedger();
       isRemoteUpdate = false;
@@ -1060,6 +1060,7 @@ function queueSave(){
 const MONTHS_NAME = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 function fmt(n){ return new Intl.NumberFormat('en-IN').format(Math.round(n||0)); }
 function sumArr(arr,key){ return Array.isArray(arr)?arr.reduce((a,r)=>a+(r&&Number(r[key])||0),0):0; }
+function sortByDate(arr){ return [...arr].sort((a,b)=>{ const da=a.date||'', db=b.date||''; return da<db?-1:da>db?1:0; }); }
 function calcStats(m){
   if(!m) return{sell:0,hExp:0,sExp:0,bill:0,profit:0,balance:0};
   const sell=sumArr(m.sell,'amount')+(m.prevBalance||0);
@@ -1102,10 +1103,11 @@ function renderSection(mIdx, section, title, infoKey, accentVar){
   const total=sumArr(rows,'amount');
   const accent=getComputedStyle(document.documentElement).getPropertyValue(accentVar).trim();
 
+  const sortedRows = sortByDate(rows);
   let trs='';
-  rows.forEach((r,rIdx)=>{
+  sortedRows.forEach((r,rIdx)=>{
     trs+=`<tr id="row-${mIdx}-${section}-${r.sn}" data-sn="${r.sn}">
-      <td style="color:var(--muted);font-family:var(--font-mono);width:32px">${r.sn}</td>
+      <td style="color:var(--muted);font-family:var(--font-mono);width:32px">${rIdx+1}</td>
       <td>${r.date||'—'}</td>
       <td style="color:var(--muted)">${r[infoKey]||'—'}</td>
       <td class="num" style="color:var(--green)">৳${fmt(r.amount)}</td>
@@ -1163,6 +1165,7 @@ function saveRow(mIdx,section,sn,infoKey){
   const info=document.getElementById(`ei-info-${mIdx}-${section}-${sn}`).value;
   const amt=Number(document.getElementById(`ei-amt-${mIdx}-${section}-${sn}`).value)||0;
   months[mIdx][section][rIdx]={...months[mIdx][section][rIdx],date,[infoKey]:info,amount:amt};
+  months[mIdx][section]=sortByDate(months[mIdx][section]);
   queueSave();
   reRenderMonth(mIdx);
 }
@@ -1177,6 +1180,7 @@ function addRow(mIdx,section,infoKey){
   const newSn=rows.length?Math.max(...rows.map(r=>r.sn))+1:1;
   const today=new Date().toISOString().slice(0,10);
   rows.push({sn:newSn,date:today,[infoKey]:'',amount:0});
+  months[mIdx][section]=sortByDate(months[mIdx][section]);
   queueSave(); reRenderMonth(mIdx);
   // auto-open edit
   setTimeout(()=>editRow(mIdx,section,newSn,infoKey),50);
@@ -1470,10 +1474,21 @@ function resetData(){
   if(fbDbUrl) fbPut(months).catch(console.error);
 }
 
+function autoSortAllMonths(data){
+  if(!Array.isArray(data)) return data;
+  return data.map(m=>{
+    const out={...m};
+    ['sell','homeExp','shopExp','billPayment'].forEach(k=>{
+      if(Array.isArray(out[k])) out[k]=sortByDate(out[k]);
+    });
+    return out;
+  });
+}
+
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 (function init(){
   const saved=loadData();
-  months=saved?saved:JSON.parse(JSON.stringify(SEED));
+  months=saved?autoSortAllMonths(saved):autoSortAllMonths(JSON.parse(JSON.stringify(SEED)));
   renderLedger();
   if(months.length>0) selectMonth(months.length-1); // open most recent month
   const fbCfg = loadFbConfig();
@@ -1484,7 +1499,7 @@ function resetData(){
     fbGet().then(data=>{
       if(Array.isArray(data) && data.length>0){
         fbLastHash = JSON.stringify(data);
-        months = data;
+        months = autoSortAllMonths(data);
         try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(months)); }catch{}
         renderLedger();
         selectMonth(months.length-1);
